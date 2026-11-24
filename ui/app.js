@@ -232,6 +232,7 @@ function speak(text){
         const url = URL.createObjectURL(blob);
         if (player) player.pause();
         player = new Audio(url);
+        player.volume = 0.88;
         document.body.classList.add('speaking');
         const done = () => { document.body.classList.remove('speaking');
           URL.revokeObjectURL(url); resolve(); };

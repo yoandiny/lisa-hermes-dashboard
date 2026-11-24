@@ -14,7 +14,36 @@ import urllib.request
 
 # Rachel — calm, British-adjacent. Override with ELEVENLABS_VOICE_ID.
 DEFAULT_VOICE = "21m00Tcm4TlvDq8ikWAM"
-MODEL = os.environ.get("ELEVENLABS_MODEL", "eleven_turbo_v2_5")
+
+
+def _env_float(name, default):
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return default
+    try:
+        return max(0.0, min(1.0, float(raw)))
+    except ValueError:
+        return default
+
+
+def _env_bool(name, default=False):
+    raw = os.environ.get(name, "").strip().lower()
+    if not raw:
+        return default
+    return raw in {"1", "true", "yes", "on"}
+
+
+def model_id():
+    return os.environ.get("ELEVENLABS_MODEL", "eleven_multilingual_v2").strip() or "eleven_multilingual_v2"
+
+
+def voice_settings():
+    return {
+        "stability": _env_float("ELEVENLABS_STABILITY", 0.58),
+        "similarity_boost": _env_float("ELEVENLABS_SIMILARITY", 0.62),
+        "style": _env_float("ELEVENLABS_STYLE", 0.08),
+        "use_speaker_boost": _env_bool("ELEVENLABS_SPEAKER_BOOST", False),
+    }
 
 
 def available():
@@ -37,13 +66,8 @@ def speak(text):
         f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id()}",
         data=json.dumps({
             "text": text[:2500],
-            "model_id": MODEL,
-            "voice_settings": {
-                "stability": 0.42,          # a little variation; 0.5+ goes flat
-                "similarity_boost": 0.85,
-                "style": 0.25,
-                "use_speaker_boost": True,
-            },
+            "model_id": model_id(),
+            "voice_settings": voice_settings(),
         }).encode(),
         method="POST",
         headers={
