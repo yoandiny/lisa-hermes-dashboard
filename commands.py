@@ -184,7 +184,7 @@ def handle(message, runner=None):
         return dict(message=None, reply="Display cleared. Hermes session is unchanged.", note="display clear")
 
     if cmd == "new":
-        return dict(fresh=True, message=arg or "Nouvelle conversation. Salue-moi en une courte phrase, sur le ton de Lisa de Mondstadt, en français.", note="Hermes thread reset")
+        return dict(fresh=True, message=arg or "Fresh conversation. Greet me in one short English line, in Lisa's Mondstadt librarian voice.", note="Hermes thread reset")
 
     if cmd == "status":
         profile = os.environ.get("HERMES_PROFILE", os.environ.get("JARVIS_PROFILE", "default"))

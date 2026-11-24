@@ -107,9 +107,9 @@ def build_command(message, session_id=None, system=None):
     # instead of narrating its CLI/runtime. Quiet mode removes the Hermes banner.
     prompt = message
     if system:
-        prompt = (f"{system}\n\n## Demande actuelle\n{message}\n\n"
-                  "Réponds maintenant. Donne uniquement les mots que Lisa doit dire à voix haute ; "
-                  "pas d'identifiants de session, métadonnées, titres ou narration de processus.")
+        prompt = (f"{system}\n\n## Current user request\n{message}\n\n"
+                  "Answer now. Return only the words Lisa should say aloud, in English; "
+                  "never include session IDs, runtime metadata, headings, or process narration.")
     cmd = _hermes_base() + ["chat", "-Q", "-q", prompt, "--source", SOURCE]
     if valid_session(session_id):
         cmd += ["--resume", str(session_id)]
