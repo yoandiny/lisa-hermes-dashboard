@@ -1,13 +1,13 @@
 <!doctype html>
-<html lang="en">
+<html lang="fr">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="jarvis-token" content="__JARVIS_TOKEN__">
-<title>JARVIS · Hermes Mission Control</title>
+<title>LISA · Bibliothèque Hermes · Mondstadt</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -18,8 +18,8 @@
 <header class="topbar">
   <div class="sigil"><span></span></div>
   <div class="brandlock">
-    <div class="overline">Hermes Agent Direct Channel</div>
-    <div class="mega">JARVIS</div>
+    <div class="overline">Ordre de Favonius · Canal Hermes</div>
+    <div class="mega">LISA</div>
   </div>
   <div class="pills">
     <div class="pill ok"><i></i><span id="top-gw">Gateway: probing</span></div>
@@ -31,8 +31,8 @@
 <div class="hud">
   <section class="col left glass">
     <header class="colhead">
-      <div class="h">Command<br>Matrix</div>
-      <div class="sub">Click to execute · payload commands stay armed</div>
+      <div class="h">Grimoire<br>des Ordres</div>
+      <div class="sub">Cliquer pour lancer · les commandes à argument restent armées</div>
     </header>
 
     <div class="cmds" id="cmds">
@@ -47,26 +47,27 @@
     </div>
 
     <div class="toolrack">
-      <div class="lbl">Connected Hermes Tools</div>
+      <div class="lbl">Outils Hermes reliés</div>
       <div id="toolsList" class="chips"><span class="chip ghost">loading tool matrix…</span></div>
     </div>
 
     <div class="uplink">
-      <div class="lbl">Pending uplink</div>
+      <div class="lbl">Message en attente</div>
       <div class="field">
-        <textarea id="input" rows="4" spellcheck="false" placeholder="Speak through browser voice or type a Hermes instruction. Slash commands are supported."></textarea>
+        <textarea id="input" rows="4" spellcheck="false" placeholder="Parle ou écris une instruction pour Lisa. Les commandes / sont supportées."></textarea>
       </div>
-      <div class="tip" id="tip">Use <b>Browser Voice</b> for local speech recognition, or server ElevenLabs if configured. Try <b>/browser</b> “open Chrome and inspect the current tab”.</div>
+      <div class="tip" id="tip">Utilise <b>la voix</b> du navigateur ou ElevenLabs si configuré. Essaie <b>/browser</b> pour une mission navigateur.</div>
     </div>
   </section>
 
   <section class="col center">
     <div class="reactor" id="reactor">
-      <svg viewBox="0 0 520 520" id="core" aria-label="JARVIS reactor visualizer">
+      <svg viewBox="0 0 520 520" id="core" aria-label="Lisa electro orb">
         <defs>
-          <radialGradient id="orb" cx="50%" cy="45%" r="55%">
-            <stop offset="0%" stop-color="#ffffff"/><stop offset="25%" stop-color="#7ff7ff"/>
-            <stop offset="58%" stop-color="#16bfd8"/><stop offset="100%" stop-color="#02111b"/>
+          <radialGradient id="orb" cx="50%" cy="42%" r="58%">
+            <stop offset="0%" stop-color="#ffffff"/><stop offset="22%" stop-color="#f3e8ff"/>
+            <stop offset="48%" stop-color="#c084fc"/><stop offset="78%" stop-color="#7e22ce"/>
+            <stop offset="100%" stop-color="#1a0a2e"/>
           </radialGradient>
           <filter id="soft" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="6" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
         </defs>
@@ -83,20 +84,20 @@
         <circle class="orbrim" cx="260" cy="260" r="64"/>
       </svg>
       <div class="status">
-        <div class="stbrand">JARVIS CORE</div>
+        <div class="stbrand">LISA · ÉLECTRO</div>
         <div class="stword" id="stword">STANDBY</div>
-        <div class="strun" id="strun">awaiting uplink</div>
+        <div class="strun" id="strun">en veille — à ton service</div>
       </div>
     </div>
 
     <div class="response glass" id="responseWrap">
-      <div class="rhead"><span>JARVIS Response</span><span class="rtag" id="rtag">IDLE</span></div>
-      <div class="rbody" id="response"><span class="rplaceholder">Standing by. Transmit an instruction.</span></div>
+      <div class="rhead"><span>Réponse de Lisa</span><span class="rtag" id="rtag">IDLE</span></div>
+      <div class="rbody" id="response"><span class="rplaceholder">Lisa attend. Envoie une instruction ou parle.</span></div>
     </div>
 
     <div class="missionbar glass">
       <button id="mic" class="ctl mic" title="Browser voice / microphone">◉ Browser Voice</button>
-      <button id="run" class="ctl run" title="Send (⌘↵)">Transmit to JARVIS ▸</button>
+      <button id="run" class="ctl run" title="Envoyer (⌘↵)">Transmettre à Lisa ▸</button>
       <button id="showCommands" class="ctl aux">Show Commands</button>
       <button id="missionBtn" class="ctl aux">Mission Control</button>
       <button id="mute" class="ctl mute on" title="Mute Jarvis speech">🔊</button>
@@ -107,7 +108,7 @@
   <section class="col right glass">
     <header class="colhead row">
       <div class="h sm">Action Log</div>
-      <div class="live" id="live">LIVE TELEMETRY</div>
+      <div class="live" id="live">TÉLÉMÉTRIE EN DIRECT</div>
     </header>
 
     <div class="sysgrid">
@@ -134,7 +135,7 @@
   </section>
 </div>
 
-<div class="brandmark">HERMES · JARVIS OS</div>
+<div class="brandmark">MONDSTADT · LISA · HERMES</div>
 <script src="app.js"></script>
 </body>
 </html>

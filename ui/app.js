@@ -287,7 +287,7 @@ function stopConvo(){
   document.body.classList.remove('speaking');
   $('#mic').classList.remove('on'); $('#mic').textContent = '◉ VOICE';
   log('voice','VOICE','conversation closed');
-  setState('', 'STANDBY', 'awaiting uplink');
+  setState('', 'STANDBY', 'en veille');
 }
 
 // ── browser speech turn ──
@@ -437,7 +437,7 @@ $('#cmds').addEventListener('click', e => {
   const b = e.target.closest('.cmd'); if (!b) return;
   const cmd = b.dataset.cmd;
   if (running){
-    log('note','BUSY',`${cmd} not sent — JARVIS is still working.`);
+    log('note','BUSY',`${cmd} non envoyé — Lisa est encore occupée.`);
     return;
   }
 
@@ -549,7 +549,7 @@ setInterval(async () => {
         `gateway online · ${s.runtime} core · profile=${s.profile || 'default'} · permission=${s.permission}`);
     log('voice', 'VOICE', `channel ready — ${RT.stt ? 'ElevenLabs STT' : (RT.browserStt ? 'browser STT' : s.stt)} / ${RT.tts ? 'ElevenLabs TTS' : 'browser TTS'}`);
     $('#mic').textContent = RT.stt ? '◉ ElevenLabs Voice' : '◉ Browser Voice';
-    setState('', 'STANDBY', 'awaiting uplink');
+    setState('', 'STANDBY', 'en veille');
   } catch(e){
     sys('gw','offline','warn');
     log('error','STATUS','server unreachable');

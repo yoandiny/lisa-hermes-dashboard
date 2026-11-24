@@ -184,7 +184,7 @@ def handle(message, runner=None):
         return dict(message=None, reply="Display cleared. Hermes session is unchanged.", note="display clear")
 
     if cmd == "new":
-        return dict(fresh=True, message=arg or "Start a fresh Hermes dashboard session. Greet me in one concise JARVIS-style line.", note="Hermes thread reset")
+        return dict(fresh=True, message=arg or "Nouvelle conversation. Salue-moi en une courte phrase, sur le ton de Lisa de Mondstadt, en français.", note="Hermes thread reset")
 
     if cmd == "status":
         profile = os.environ.get("HERMES_PROFILE", os.environ.get("JARVIS_PROFILE", "default"))
@@ -235,7 +235,7 @@ def handle(message, runner=None):
 
     if cmd == "personality":
         if not arg:
-            return dict(message=None, reply=d["personality"] or "Running default JARVIS persona.", note="persona read")
+            return dict(message=None, reply=d["personality"] or "Personnalité par défaut : Lisa de Mondstadt.", note="persona read")
         update_state(lambda state: state.__setitem__("personality", arg))
         return dict(message=f'Tone overlay changed to: "{arg}". Reply in one short line using that tone.', note=f"persona: {arg[:50]}")
 

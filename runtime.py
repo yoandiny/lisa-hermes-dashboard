@@ -103,13 +103,13 @@ def runtime_kind():
 
 def build_command(message, session_id=None, system=None):
     # Hermes chat has no separate --system flag. Put the voice persona and the
-    # current request into one explicit turn so the model answers as JARVIS
+    # current request into one explicit turn so the model answers as Lisa
     # instead of narrating its CLI/runtime. Quiet mode removes the Hermes banner.
     prompt = message
     if system:
-        prompt = (f"{system}\n\n## Current user request\n{message}\n\n"
-                  "Answer the request now. Return only the words JARVIS should say aloud; "
-                  "never include session IDs, runtime metadata, headings, or process narration.")
+        prompt = (f"{system}\n\n## Demande actuelle\n{message}\n\n"
+                  "Réponds maintenant. Donne uniquement les mots que Lisa doit dire à voix haute ; "
+                  "pas d'identifiants de session, métadonnées, titres ou narration de processus.")
     cmd = _hermes_base() + ["chat", "-Q", "-q", prompt, "--source", SOURCE]
     if valid_session(session_id):
         cmd += ["--resume", str(session_id)]
