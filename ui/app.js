@@ -190,6 +190,19 @@ function cleanForSpeech(text){
     .trim();
 }
 
+// Hermes streams logs + prose; the site TTS only sees what you typed. Keep spoken lines short.
+function speechPayload(text){
+  let t = cleanForSpeech(text);
+  if (!t) return '';
+  const sentences = t.match(/[^.!?]+[.!?]+|[^.!?]+$/g) || [t];
+  t = sentences.slice(0, 3).join(' ').trim();
+  if (t.length > 900){
+    const cut = t.slice(0, 880);
+    t = (cut.match(/^[\s\S]*[.!?]/) || [cut])[0].trim() || cut.trim();
+  }
+  return t;
+}
+
 /* ══════════ continuous voice conversation ══════════
    Click VOICE once. From then on: listen → you stop → transcribe → Jarvis
    answers and speaks → it listens again, automatically. No re-clicking between
@@ -209,10 +222,9 @@ const SILENCE=900, MIN_TURN_MS=350, MAX_TURN_MS=18000, NO_SPEECH_MS=10000;
 let muted = false, player = null;
 function speak(text){
   return new Promise(resolve => {
-    text = cleanForSpeech(text);
-    if (muted || !text) return resolve();
+    const spoken = speechPayload(text);
+    if (muted || !spoken) return resolve();
     suppress = true;
-    const spoken = text.length > 700 ? text.slice(0, 680).replace(/\s+\S*$/,'') + '…' : text;
     if (!RT.tts && RT.browserTts && speechSynth){
       try{
         speechSynth.cancel();
@@ -239,7 +251,10 @@ function speak(text){
         player.onended = done; player.onerror = done;
         return player.play();
       })
-      .catch(() => resolve());
+      .catch(err => {
+        log('error','VOICE',`ElevenLabs TTS failed: ${String(err).slice(0,120)}`);
+        resolve();
+      });
   });
 }
 

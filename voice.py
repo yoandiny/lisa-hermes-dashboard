@@ -10,6 +10,7 @@ page source, or a screen recording.
 import json
 import os
 import urllib.error
+import urllib.parse
 import urllib.request
 
 # Rachel — calm, British-adjacent. Override with ELEVENLABS_VOICE_ID.
@@ -34,7 +35,31 @@ def _env_bool(name, default=False):
 
 
 def model_id():
-    return os.environ.get("ELEVENLABS_MODEL", "eleven_multilingual_v2").strip() or "eleven_multilingual_v2"
+    # Match the model you pick on elevenlabs.io — site preview often uses v4, not multilingual_v2.
+    return os.environ.get("ELEVENLABS_MODEL", "eleven_v4").strip() or "eleven_v4"
+
+
+def output_format():
+    fmt = os.environ.get("ELEVENLABS_OUTPUT_FORMAT", "mp3_44100_128").strip()
+    allowed = {
+        "mp3_44100_128", "mp3_44100_192", "mp3_44100_96", "mp3_44100_64", "mp3_44100_32",
+        "mp3_22050_32",
+    }
+    return fmt if fmt in allowed else "mp3_44100_128"
+
+
+def language_code():
+    return os.environ.get("ELEVENLABS_LANGUAGE", "en").strip() or None
+
+
+def optional_seed():
+    raw = os.environ.get("ELEVENLABS_SEED", "").strip()
+    if not raw:
+        return None
+    try:
+        return int(raw)
+    except ValueError:
+        return None
 
 
 def voice_settings():
@@ -62,13 +87,22 @@ def speak(text):
     if not text:
         raise ValueError("empty text")
 
+    params = urllib.parse.urlencode({"output_format": output_format()})
+    payload = {
+        "text": text[:2500],
+        "model_id": model_id(),
+        "voice_settings": voice_settings(),
+    }
+    lang = language_code()
+    if lang and "multilingual_v2" not in model_id():
+        payload["language_code"] = lang
+    seed = optional_seed()
+    if seed is not None:
+        payload["seed"] = seed
+
     req = urllib.request.Request(
-        f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id()}",
-        data=json.dumps({
-            "text": text[:2500],
-            "model_id": model_id(),
-            "voice_settings": voice_settings(),
-        }).encode(),
+        f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id()}?{params}",
+        data=json.dumps(payload).encode(),
         method="POST",
         headers={
             "content-type": "application/json",
