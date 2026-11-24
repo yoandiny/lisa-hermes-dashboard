@@ -9,32 +9,97 @@ const speechSynth = window.speechSynthesis;
 const API_TOKEN = document.querySelector('meta[name="jarvis-token"]')?.content || '';
 const apiHeaders = extra => ({'x-jarvis-token': API_TOKEN, ...(extra || {})});
 
-// ── reactor ticks ──
-(() => {
-  const g = $('#ticks480');
-  for (let i = 0; i < 128; i++){
-    const a = (i/128) * Math.PI*2, maj = i % 8 === 0;
-    const r0 = maj ? 246 : 250, r1 = 260;
-    const l = document.createElementNS('http://www.w3.org/2000/svg','line');
-    l.setAttribute('x1', 260+Math.cos(a)*r0); l.setAttribute('y1', 260+Math.sin(a)*r0);
-    l.setAttribute('x2', 260+Math.cos(a)*r1); l.setAttribute('y2', 260+Math.sin(a)*r1);
-    if (maj) l.setAttribute('class','maj');
-    g.appendChild(l);
-  }
-})();
-
 const now = () => new Date().toLocaleTimeString('en-GB', {hour12:false});
 const rid = () => 'run_' + (crypto.randomUUID ? crypto.randomUUID().replace(/-/g,'').slice(0,24)
                                               : Math.random().toString(16).slice(2,14));
 const esc = s => String(s ?? '').replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
 
-// ── reactor state ──
-function setState(cls, word, sub){
-  document.body.className = cls;
-  if (word) $('#stword').textContent = word;
-  if (sub != null) $('#strun').textContent = sub;
+// ── Lisa UI state (orbe + copy) ──
+let thinkTick = null, thinkT0 = 0;
+const LAB = {idle:'Lisa veille',listening:'Lisa écoute',thinking:'Lisa réfléchit…',speaking:'Lisa parle'};
+
+function setAppState(state){
+  const app = $('#app');
+  if (app) app.dataset.state = state;
+  const lab = $('#stateLab');
+  if (lab && state !== 'thinking') lab.textContent = LAB[state] || LAB.idle;
 }
-function setTag(cls, text){ const t=$('#rtag'); t.className='rtag '+cls; t.textContent=text; }
+function startThinkTimer(){
+  thinkT0 = performance.now();
+  if (thinkTick) clearInterval(thinkTick);
+  thinkTick = setInterval(() => {
+    if (!running) return;
+  const lab = $('#stateLab');
+  if (!lab) return;
+  const s = ((performance.now() - thinkT0) / 1000).toFixed(0);
+  lab.textContent = `${LAB.thinking} ${s}s`;
+  }, 200);
+}
+function stopThinkTimer(){
+  if (thinkTick) clearInterval(thinkTick);
+  thinkTick = null;
+}
+function setUserLine(text){
+  const el = $('#userLine');
+  if (!el) return;
+  if (!text){ el.hidden = true; return; }
+  el.textContent = `Vous : « ${text.slice(0, 220)} »`;
+  el.hidden = false;
+}
+function setState(cls, word, sub){
+  if (cls === 'running'){ setAppState('thinking'); startThinkTimer(); return; }
+  if (cls === 'listening'){ setAppState('listening'); return; }
+  if (cls === 'error'){
+    setAppState('idle');
+    $('#capWrap')?.classList.add('is-error');
+    const lab = $('#stateLab'); if (lab) lab.textContent = 'Lisa a un souci';
+    stopThinkTimer();
+    return;
+  }
+  stopThinkTimer();
+  if (!convo && !suppress) setAppState('idle');
+}
+function setTag(cls, text){
+  const t = $('#rtag'); if (!t) return;
+  t.textContent = text || 'IDLE';
+}
+function pushLevel(rms){
+  const app = $('#app');
+  if (!app) return;
+  const on = ['listening','speaking'].includes(app.dataset.state);
+  const v = on ? Math.min(1, Math.max(0, rms * 3.8)) : 0;
+  app.style.setProperty('--level', v.toFixed(3));
+}
+function levelLoop(){
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  let t = 0;
+  (function frame(){
+    t += 0.05;
+    const app = $('#app');
+    const st = app?.dataset.state;
+    if (st === 'speaking' && (!analyser || suppress)){
+      const v = 0.32 + 0.22 * Math.sin(t * 2.8) * Math.sin(t * 1.3);
+      app.style.setProperty('--level', v.toFixed(3));
+    } else if (st !== 'listening' && st !== 'speaking'){
+      app?.style.setProperty('--level', '0');
+    }
+    requestAnimationFrame(frame);
+  })();
+}
+function openDrawer(id){
+  document.querySelectorAll('.drawer').forEach(el => {
+    const on = el.id === id;
+    el.hidden = !on;
+    el.classList.toggle('open', on);
+  });
+  const bd = $('#backdrop');
+  if (bd){ bd.hidden = false; bd.classList.add('show'); }
+}
+function closeDrawers(){
+  document.querySelectorAll('.drawer').forEach(d => { d.classList.remove('open'); d.hidden = true; });
+  const bd = $('#backdrop');
+  if (bd){ bd.classList.remove('show'); bd.hidden = true; }
+}
 
 // ── action log ──
 function log(kind, label, msg, jsonHtml){
@@ -71,18 +136,13 @@ async function transmit(message, options = {}){
 
   const fresh = /^\/new\b/.test(message.trim());
   const id = rid();
-  setState('running', 'RUNNING', id.slice(0,20) + '…');
+  setUserLine(message);
+  $('#toolHint').hidden = true;
+  $('#capWrap')?.classList.remove('is-error');
+  setState('running');
   setTag('run', 'RUNNING');
   $('#response').innerHTML = '<span class="cur"></span>';
   log('run', 'RUN', `started ${id}; uplink cleared`);
-
-  // visible elapsed counter — a slow answer should never look like a dead screen
-  const t0 = performance.now();
-  const tick = setInterval(() => {
-    if (!running) return;
-    const s = ((performance.now()-t0)/1000).toFixed(1);
-    if (!answer) $('#strun').textContent = `thinking… ${s}s`;
-  }, 200);
 
   try {
     activeController = new AbortController();
@@ -108,18 +168,19 @@ async function transmit(message, options = {}){
   } catch (e){
     if (e?.name === 'AbortError'){
       log('note', 'CANCEL', 'run cancelled');
-      setState('', 'STANDBY', 'cancelled');
+      setAppState('idle');
       setTag('', 'IDLE');
     } else {
       log('error', 'ERROR', String(e).slice(0,200));
-      setState('error', 'FAULT', 'stream dropped');
+      setState('error');
       setTag('err', 'ERROR');
     }
   }
   activeController = null;
   running = false;
-  clearInterval(tick);
-  await speakDone;                 // don't return until Jarvis has finished talking
+  stopThinkTimer();
+  await speakDone;
+  if (!convo && !suppress) setAppState('idle');
 }
 
 function handle(ev){
@@ -133,10 +194,14 @@ function handle(ev){
       log('latency', 'LATENCY', `first token after ${ev.ms}ms`);
       break;
     case 'tool':
-      if (ev.phase === 'use')
+      if (ev.phase === 'use'){
         log('tool', 'TOOL', `→ ${ev.name}(${ev.input || ''})`);
-      else
-        log('tool', 'TOOL', `✓ ${ev.ok===false?'error':'ok'}`);
+        const hint = $('#toolHint');
+        if (hint){
+          hint.hidden = false;
+          hint.textContent = `Outil · ${ev.name}`;
+        }
+      } else log('tool', 'TOOL', `✓ ${ev.ok===false?'error':'ok'}`);
       break;
     case 'delta':
       answer += ev.text;
@@ -150,14 +215,13 @@ function handle(ev){
       log('status', 'COMPLETE', 'run completed', usageBlock(ev));
       break;
     case 'complete':
-      setState('done', 'COMPLETE', (ev.ms!=null?`${ev.ms}ms`:'') );
       setTag('done', 'COMPLETE');
       log('complete', 'COMPLETE', ev.ms!=null?`run completed in ${ev.ms}ms`:'run completed');
       renderAnswer(true);
       speakDone = speakThisRun ? speak(answer) : Promise.resolve();
       break;
     case 'error':
-      setState('error', 'FAULT', ev.message?.slice(0,40) || 'error');
+      setState('error');
       setTag('err', 'ERROR');
       log('error', 'ERROR', ev.message || 'unknown');
       // show it in the panel too, so a failure isn't a silent empty box
@@ -173,8 +237,9 @@ function handle(ev){
 
 function renderAnswer(finaldone){
   const el = $('#response');
-  el.innerHTML = esc(answer) + (finaldone ? '' : '<span class="cur"></span>');
-  el.scrollTop = el.scrollHeight;
+  if (!el) return;
+  el.innerHTML = (answer ? esc(answer) : '')
+    + (finaldone || !answer ? '' : '<span class="cur"></span>');
 }
 
 function cleanForSpeech(text){
@@ -225,13 +290,13 @@ function speak(text){
     const spoken = speechPayload(text);
     if (muted || !spoken) return resolve();
     suppress = true;
+    setAppState('speaking');
     if (!RT.tts && RT.browserTts && speechSynth){
       try{
         speechSynth.cancel();
         const u = new SpeechSynthesisUtterance(spoken);
         u.rate = 0.95; u.pitch = 0.82; u.volume = 1;
-        document.body.classList.add('speaking');
-        u.onend = u.onerror = () => { document.body.classList.remove('speaking'); resolve(); };
+        u.onend = u.onerror = () => { resolveAfterSpeak(resolve); };
         speechSynth.speak(u);
         return;
       }catch(_){ return resolve(); }
@@ -245,17 +310,21 @@ function speak(text){
         if (player) player.pause();
         player = new Audio(url);
         player.volume = 0.88;
-        document.body.classList.add('speaking');
-        const done = () => { document.body.classList.remove('speaking');
-          URL.revokeObjectURL(url); resolve(); };
+        const done = () => { URL.revokeObjectURL(url); resolveAfterSpeak(resolve); };
         player.onended = done; player.onerror = done;
         return player.play();
       })
       .catch(err => {
         log('error','VOICE',`ElevenLabs TTS failed: ${String(err).slice(0,120)}`);
-        resolve();
+        resolveAfterSpeak(resolve);
       });
   });
+}
+function resolveAfterSpeak(resolve){
+  suppress = false;
+  if (convo) setAppState('listening');
+  else setAppState('idle');
+  resolve();
 }
 
 // ── start / stop the whole conversation ──
@@ -275,16 +344,19 @@ async function micToggle(){
     actx.createMediaStreamSource(micStream).connect(analyser);
     vdata = new Uint8Array(analyser.fftSize);
     convo = true; suppress = false;
-    $('#mic').classList.add('on'); $('#mic').textContent = '● ElevenLabs Live';
+    $('#mic').classList.add('on');
+    $('#mic')?.setAttribute('aria-pressed','true');
     log('voice','VOICE','ElevenLabs voice conversation open · listening');
+    setAppState('listening');
     beginTurn();
     return;
   }
   if (SpeechRecognition){
     convo = true; suppress = false;
-    $('#mic').classList.add('on'); $('#mic').textContent = '● Browser Live';
+    $('#mic').classList.add('on');
+    $('#mic')?.setAttribute('aria-pressed','true');
     log('voice','VOICE','browser speech recognition open · listening');
-    setState('listening','LISTENING','browser speech online');
+    setAppState('listening');
     startBrowserRecognition();
     return;
   }
@@ -300,10 +372,10 @@ function stopConvo(){
   if (player){ try{player.pause();}catch(_){} }
   if (micStream){ micStream.getTracks().forEach(t=>t.stop()); micStream=null; }
   if (actx){ actx.close().catch(()=>{}); actx=null; analyser=null; }
-  document.body.classList.remove('speaking');
-  $('#mic').classList.remove('on'); $('#mic').textContent = '◉ VOICE';
+  $('#mic').classList.remove('on');
+  $('#mic')?.setAttribute('aria-pressed','false');
   log('voice','VOICE','conversation closed');
-  setState('', 'STANDBY', 'en veille');
+  setAppState('idle');
 }
 
 // ── browser speech turn ──
@@ -322,7 +394,10 @@ function startBrowserRecognition(){
       else interim += txt;
     }
     const shown = (finalText || interim || '').trim();
-    if (shown) $('#strun').textContent = 'HEARD: ' + shown.slice(0,42);
+    if (shown){
+      const cap = $('#response');
+      if (cap && !running) cap.textContent = shown.slice(0, 280);
+    }
   };
   recognition.onerror = e => log('error','VOICE',`browser speech: ${e.error || 'error'}`);
   recognition.onend = async () => {
@@ -338,7 +413,7 @@ function startBrowserRecognition(){
     suppress = false;
     if (convo) setTimeout(startBrowserRecognition, 350);
   };
-  setState('listening','LISTENING','browser speech online');
+  setAppState('listening');
   try{ recognition.start(); }catch(e){ log('error','VOICE','speech recognition failed to start'); }
 }
 
@@ -352,14 +427,12 @@ function beginTurn(){
   recorder.onstop = ship;
   recorder.start(250);                          // timeslice → data flows reliably
   turnStart = loudAt = performance.now();
-  setState('listening','LISTENING','listening…');
+  setAppState('listening');
   if (!vad) vad = setInterval(vtick, 40);
 }
 
 function meter(rms){
-  // live input bar in the reactor subtitle, so you can SEE it hearing you
-  const n = Math.max(0, Math.min(14, Math.round(rms * 90)));
-  $('#strun').textContent = 'IN ' + '▮'.repeat(n) + '▯'.repeat(14 - n);
+  pushLevel(rms);
 }
 
 function endTurn(reason){
@@ -414,7 +487,8 @@ async function ship(){
     if (convo && !suppress) beginTurn();
     return;
   }
-  setState('running','TRANSCRIBING','…');
+  setAppState('thinking');
+  $('#stateLab').textContent = 'Lisa transcrit…';
   log('voice','VOICE',`uploading ${Math.round(blob.size/1024)}KB to server STT`);
   const t0 = performance.now();
   try {
@@ -424,7 +498,7 @@ async function ship(){
     const ms = Math.round(performance.now() - t0);
     if (!text){
       log('voice','VOICE','nothing transcribed');
-      if (convo) beginTurn(); else setState('','STANDBY','nothing heard');
+      if (convo) beginTurn(); else setAppState('idle');
       return;
     }
     log('voice','VOICE',`transcribed by ElevenLabs in ${ms}ms: "${text}"`);
@@ -439,7 +513,7 @@ async function ship(){
   } catch(e){
     log('error','VOICE','transcription failed');
     suppress = false;
-    if (convo) beginTurn(); else setState('error','FAULT','transcription failed');
+    if (convo) beginTurn(); else setState('error');
   }
 }
 
@@ -496,11 +570,19 @@ function sendFromInput(){
   log('send','SEND',`transmit: ${full}`);
   transmit(full);
 }
-$('#run').onclick = sendFromInput;
-$('#mic').onclick = micToggle;
-$('#showCommands').onclick = () => transmit('/commands', {speak:false});
-$('#missionBtn').onclick = () => transmit('/mission');
-$('#clearBtn').onclick = () => { answer=''; $('#response').innerHTML='<span class="rplaceholder">Display cleared. Standing by.</span>'; log('note','CLEAR','response panel cleared'); };
+$('#run')?.addEventListener('click', sendFromInput);
+$('#mic')?.addEventListener('click', micToggle);
+$('#btnCommands')?.addEventListener('click', () => { openDrawer('drawerDesk'); transmit('/commands', {speak:false}); });
+$('#btnHistory')?.addEventListener('click', () => openDrawer('drawerLog'));
+$('#btnDesk')?.addEventListener('click', () => openDrawer('drawerDesk'));
+$('#btnWrite')?.addEventListener('click', () => { openDrawer('drawerDesk'); $('#input')?.focus(); });
+document.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', closeDrawers));
+$('#backdrop')?.addEventListener('click', closeDrawers);
+$('#clearBtn')?.addEventListener('click', () => {
+  answer = '';
+  $('#response').innerHTML = '<span class="rplaceholder">Affichage effacé. Lisa attend.</span>';
+  log('note','CLEAR','response cleared');
+});
 document.querySelectorAll('[data-quick]').forEach(b => b.onclick = () =>
   transmit(b.dataset.quick, {speak:false}));
 document.addEventListener('keydown', e => {
@@ -511,12 +593,17 @@ document.addEventListener('keydown', e => {
     return;
   }
   if (convo) stopConvo();
+  closeDrawers();
 });
-$('#mute').onclick = () => {
-  muted = !muted; const b=$('#mute');
-  b.textContent = muted?'🔇':'🔊'; b.classList.toggle('on',!muted); b.classList.toggle('off',muted);
+$('#mute')?.addEventListener('click', () => {
+  muted = !muted;
+  const b = $('#mute');
+  if (b){
+    b.textContent = muted ? 'Voix coupée' : 'Couper la voix';
+    b.setAttribute('aria-pressed', muted ? 'true' : 'false');
+  }
   if (muted && player) player.pause();
-};
+});
 $('#input').addEventListener('keydown', e => {
   if (e.key==='Enter' && (e.metaKey||e.ctrlKey)){ e.preventDefault(); sendFromInput(); }
 });
@@ -555,19 +642,25 @@ setInterval(async () => {
     sys('profile', s.profile || 'default');
     sys('runtime', s.runtime || '—', s.runtime === 'hermes' ? 'ok' : 'warn');
     sys('clock', now());
-    $('#top-gw').textContent = `Gateway: online ${location.origin}`;
-    $('#top-profile').textContent = 'Profile: ' + (s.profile || 'default');
-    $('#top-voice').textContent = 'Voice: ' + (RT.stt ? 'ElevenLabs STT' : (RT.browserStt ? 'browser STT' : s.stt)) + ' / ' + (RT.tts ? 'ElevenLabs TTS' : 'browser TTS');
+    const online = $('#topOnline');
+    if (online){
+      const voice = `${RT.stt ? 'ElevenLabs' : 'navigateur'} · ${RT.tts ? 'TTS ElevenLabs' : 'TTS navigateur'}`;
+      online.textContent = (s.runtime === 'hermes' ? 'En ligne' : 'Hermes hors ligne')
+        + ` · ${s.profile || 'default'} · ${voice}`;
+      online.className = 'online' + (s.runtime === 'hermes' ? '' : ' warn');
+    }
     const tools = (s.tools || []).slice(0, 12);
-    $('#toolsList').innerHTML = tools.length ? tools.map(t => `<span class="chip">${esc(t)}</span>`).join('') : '<span class="chip ghost">Hermes tool list unavailable — set HERMES_CMD if needed</span>';
+    $('#toolsList').innerHTML = tools.length ? tools.map(t => `<span class="chip">${esc(t)}</span>`).join('') : '<span class="chip ghost">Outils indisponibles — HERMES_CMD ?</span>';
 
     log('status', 'BOOT',
         `gateway online · ${s.runtime} core · profile=${s.profile || 'default'} · permission=${s.permission}`);
     log('voice', 'VOICE', `channel ready — ${RT.stt ? 'ElevenLabs STT' : (RT.browserStt ? 'browser STT' : s.stt)} / ${RT.tts ? 'ElevenLabs TTS' : 'browser TTS'}`);
-    $('#mic').textContent = RT.stt ? '◉ ElevenLabs Voice' : '◉ Browser Voice';
-    setState('', 'STANDBY', 'en veille');
+    setAppState('idle');
+    levelLoop();
   } catch(e){
     sys('gw','offline','warn');
+    const online = $('#topOnline');
+    if (online){ online.textContent = 'Hors ligne'; online.className = 'online err'; }
     log('error','STATUS','server unreachable');
   }
 })();

@@ -2,140 +2,126 @@
 <html lang="fr">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="jarvis-token" content="__JARVIS_TOKEN__">
-<title>LISA · Bibliothèque Hermes · Mondstadt</title>
+<title>Lisa — Mode vocal · Hermes</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&family=DM+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-<div class="scan"></div>
-<div class="grid-bg"></div>
-<div class="ambient a1"></div><div class="ambient a2"></div>
+<div class="app" id="app" data-state="idle" style="--level:0">
 
-<header class="topbar">
-  <div class="sigil"><span></span></div>
-  <div class="brandlock">
-    <div class="overline">Ordre de Favonius · Canal Hermes</div>
-    <div class="mega">LISA</div>
+<header class="top">
+  <div class="brand">
+    <span class="av" aria-hidden="true">L</span>
+    <div>
+      <div class="name">Lisa</div>
+      <div class="online" id="topOnline">Connexion…</div>
+    </div>
   </div>
-  <div class="pills">
-    <div class="pill ok"><i></i><span id="top-gw">Gateway: probing</span></div>
-    <div class="pill"><i></i><span id="top-profile">Profile: default</span></div>
-    <div class="pill warn"><i></i><span id="top-voice">Voice: browser</span></div>
-  </div>
+  <nav class="nav-chips" aria-label="Menus">
+    <button type="button" class="chip" id="btnHistory">Historique</button>
+    <button type="button" class="chip" id="btnDesk">Carnet</button>
+    <button type="button" class="chip" id="btnCommands">Commandes</button>
+  </nav>
 </header>
 
-<div class="hud">
-  <section class="col left glass">
-    <header class="colhead">
-      <div class="h">Grimoire<br>des Ordres</div>
-      <div class="sub">Cliquer pour lancer · les commandes à argument restent armées</div>
-    </header>
-
-    <div class="cmds" id="cmds">
-      <button class="cmd" data-cmd="/new"><b>/new</b><span>Fresh thread</span></button>
-      <button class="cmd" data-cmd="/goal"><b>/goal</b><span>Standing objective</span></button>
-      <button class="cmd" data-cmd="/tools"><b>/tools</b><span>Hermes tool status</span></button>
-      <button class="cmd" data-cmd="/browser"><b>/browser</b><span>Chrome / browser op</span></button>
-      <button class="cmd" data-cmd="/background"><b>/background</b><span>Async mission</span></button>
-      <button class="cmd" data-cmd="/mission"><b>/mission</b><span>Mission queue</span></button>
-      <button class="cmd" data-cmd="/personality"><b>/personality</b><span>Voice/tone overlay</span></button>
-      <button class="cmd" data-cmd="/commands"><b>/commands</b><span>Show commands</span></button>
-    </div>
-
-    <div class="toolrack">
-      <div class="lbl">Outils Hermes reliés</div>
-      <div id="toolsList" class="chips"><span class="chip ghost">loading tool matrix…</span></div>
-    </div>
-
-    <div class="uplink">
-      <div class="lbl">Message en attente</div>
-      <div class="field">
-        <textarea id="input" rows="4" spellcheck="false" placeholder="Parle ou écris une instruction pour Lisa. Les commandes / sont supportées."></textarea>
-      </div>
-      <div class="tip" id="tip">Utilise <b>la voix</b> du navigateur ou ElevenLabs si configuré. Essaie <b>/browser</b> pour une mission navigateur.</div>
-    </div>
-  </section>
-
-  <section class="col center">
-    <div class="reactor" id="reactor">
-      <svg viewBox="0 0 520 520" id="core" aria-label="Lisa electro orb">
-        <defs>
-          <radialGradient id="orb" cx="50%" cy="42%" r="58%">
-            <stop offset="0%" stop-color="#ffffff"/><stop offset="22%" stop-color="#f3e8ff"/>
-            <stop offset="48%" stop-color="#c084fc"/><stop offset="78%" stop-color="#7e22ce"/>
-            <stop offset="100%" stop-color="#1a0a2e"/>
-          </radialGradient>
-          <filter id="soft" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="6" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
-        </defs>
-        <circle class="ring rr1" cx="260" cy="260" r="242"/>
-        <circle class="ring rr2" cx="260" cy="260" r="210"/>
-        <circle class="ring rr3" cx="260" cy="260" r="174"/>
-        <circle class="ring rr4" cx="260" cy="260" r="132"/>
-        <circle class="arcA" cx="260" cy="260" r="226" filter="url(#soft)"/>
-        <circle class="arcB" cx="260" cy="260" r="188" filter="url(#soft)"/>
-        <circle class="arcC" cx="260" cy="260" r="151" filter="url(#soft)"/>
-        <g id="ticks480"></g>
-        <path class="comet" d="M80 318 Q 195 392 278 310" />
-        <circle class="orb" cx="260" cy="260" r="64" fill="url(#orb)" filter="url(#soft)"/>
-        <circle class="orbrim" cx="260" cy="260" r="64"/>
-      </svg>
-      <div class="status">
-        <div class="stbrand">LISA · ÉLECTRO</div>
-        <div class="stword" id="stword">STANDBY</div>
-        <div class="strun" id="strun">en veille — à ton service</div>
+<main class="stage">
+  <div class="halo">
+    <span class="ring"></span><span class="ring" style="--dl:1.4s"></span>
+    <span class="arc"></span>
+    <div class="breath">
+      <div class="orb" role="img" aria-label="Lisa">
+        <div class="blobs"><i class="b1"></i><i class="b2"></i><i class="b3"></i><i class="b4"></i></div>
+        <i class="core"></i>
       </div>
     </div>
+  </div>
 
-    <div class="response glass" id="responseWrap">
-      <div class="rhead"><span>Réponse de Lisa</span><span class="rtag" id="rtag">IDLE</span></div>
-      <div class="rbody" id="response"><span class="rplaceholder">Lisa attend. Envoie une instruction ou parle.</span></div>
-    </div>
+  <div class="wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
 
-    <div class="missionbar glass">
-      <button id="mic" class="ctl mic" title="Browser voice / microphone">◉ Browser Voice</button>
-      <button id="run" class="ctl run" title="Envoyer (⌘↵)">Transmettre à Lisa ▸</button>
-      <button id="showCommands" class="ctl aux">Show Commands</button>
-      <button id="missionBtn" class="ctl aux">Mission Control</button>
-      <button id="mute" class="ctl mute on" title="Mute Jarvis speech">🔊</button>
-      <button id="clearBtn" class="ctl aux">Clear</button>
-    </div>
-  </section>
+  <div class="dialogue" aria-live="polite">
+    <p class="lab" id="stateLab">Lisa veille</p>
+    <p class="sub you" id="userLine" hidden></p>
+    <div class="cap" id="capWrap"><span id="response" class="rplaceholder">Je suis là. Parlez ou ouvrez le carnet pour écrire.</span></div>
+    <span class="rtag" id="rtag" hidden>IDLE</span>
+  </div>
 
-  <section class="col right glass">
-    <header class="colhead row">
-      <div class="h sm">Action Log</div>
-      <div class="live" id="live">TÉLÉMÉTRIE EN DIRECT</div>
-    </header>
+  <p class="tool sub" id="toolHint" hidden></p>
+</main>
 
-    <div class="sysgrid">
-      <div class="sysrow"><span>Gateway</span><b id="sy-gw" class="ok">online</b></div>
-      <div class="sysrow"><span>Brain</span><b id="sy-brain">—</b></div>
-      <div class="sysrow"><span>Voice</span><b id="sy-voice">—</b></div>
-      <div class="sysrow"><span>Profile</span><b id="sy-profile">default</b></div>
-      <div class="sysrow"><span>Runtime</span><b id="sy-runtime">—</b></div>
-      <div class="sysrow"><span>Uplink</span><b id="sy-clock">—</b></div>
-    </div>
+<footer class="foot">
+  <div class="dock">
+    <button type="button" class="chip" id="btnWrite" aria-expanded="false">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M7 10h.01M11 10h.01M15 10h.01M8 14h8"/></svg>
+      Écrire
+    </button>
+    <button type="button" class="mic" id="mic" aria-label="Parler à Lisa" aria-pressed="false">
+      <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
+    </button>
+    <button type="button" class="chip" id="mute" aria-pressed="false">Couper la voix</button>
+  </div>
+  <p class="sub hint" id="footHint">Appuyez sur le micro pour une conversation continue</p>
+</footer>
 
-    <div class="missionPanel">
-      <div class="log-lbl">Mission controls</div>
-      <div class="miniBtns">
-        <button data-quick="/status">Status</button>
-        <button data-quick="/tools">Tools</button>
-        <button data-quick="/toolsets">Toolsets</button>
-        <button data-quick="/connectors">Connectors</button>
-      </div>
-    </div>
+<!-- Panneau historique (télémétrie) -->
+<aside class="drawer" id="drawerLog" aria-label="Historique" hidden>
+  <header class="drawer-head">
+    <h2>Historique</h2>
+    <button type="button" class="chip sm" data-close>×</button>
+  </header>
+  <div class="sysgrid">
+    <div class="sysrow"><span>Gateway</span><b id="sy-gw">—</b></div>
+    <div class="sysrow"><span>Brain</span><b id="sy-brain">—</b></div>
+    <div class="sysrow"><span>Voice</span><b id="sy-voice">—</b></div>
+    <div class="sysrow"><span>Profile</span><b id="sy-profile">default</b></div>
+    <div class="sysrow"><span>Runtime</span><b id="sy-runtime">—</b></div>
+    <div class="sysrow"><span>Uplink</span><b id="sy-clock">—</b></div>
+  </div>
+  <div class="miniBtns">
+    <button type="button" data-quick="/status">Status</button>
+    <button type="button" data-quick="/tools">Tools</button>
+    <button type="button" data-quick="/toolsets">Toolsets</button>
+    <button type="button" data-quick="/connectors">Connectors</button>
+  </div>
+  <p class="log-lbl">Flux d'événements</p>
+  <div class="log" id="log"></div>
+</aside>
 
-    <div class="log-lbl">Event stream</div>
-    <div class="log" id="log"></div>
-  </section>
+<!-- Carnet : commandes + saisie -->
+<aside class="drawer" id="drawerDesk" aria-label="Carnet de Lisa" hidden>
+  <header class="drawer-head">
+    <h2>Carnet</h2>
+    <button type="button" class="chip sm" data-close>×</button>
+  </header>
+  <p class="sub drawer-sub">Slash commands · armé = prochain message complète la commande</p>
+  <div class="cmds" id="cmds">
+    <button type="button" class="cmd" data-cmd="/new"><b>/new</b><span>Nouveau fil</span></button>
+    <button type="button" class="cmd" data-cmd="/goal"><b>/goal</b><span>Objectif</span></button>
+    <button type="button" class="cmd" data-cmd="/tools"><b>/tools</b><span>Outils</span></button>
+    <button type="button" class="cmd" data-cmd="/browser"><b>/browser</b><span>Navigateur</span></button>
+    <button type="button" class="cmd" data-cmd="/background"><b>/background</b><span>Arrière-plan</span></button>
+    <button type="button" class="cmd" data-cmd="/mission"><b>/mission</b><span>Missions</span></button>
+    <button type="button" class="cmd" data-cmd="/personality"><b>/personality</b><span>Ton</span></button>
+    <button type="button" class="cmd" data-cmd="/commands"><b>/commands</b><span>Liste</span></button>
+  </div>
+  <p class="lbl">Outils Hermes</p>
+  <div id="toolsList" class="chips"><span class="chip ghost">chargement…</span></div>
+  <p class="lbl">Message</p>
+  <div class="field">
+    <textarea id="input" rows="4" spellcheck="false" placeholder="Instruction pour Lisa… Ctrl+Entrée pour envoyer"></textarea>
+  </div>
+  <div class="desk-actions">
+    <button type="button" class="chip gold" id="run">Transmettre à Lisa</button>
+    <button type="button" class="chip" id="clearBtn">Effacer l'affichage</button>
+  </div>
+  <p class="tip" id="tip">Ctrl+Entrée envoie le message. Les commandes à argument restent armées après un clic.</p>
+</aside>
+
+<div class="backdrop" id="backdrop" hidden></div>
 </div>
-
-<div class="brandmark">MONDSTADT · LISA · HERMES</div>
 <script src="app.js"></script>
 </body>
 </html>
