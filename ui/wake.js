@@ -123,7 +123,32 @@ export function setWakeWanted(on){
   else stopWake();
 }
 
+function playWakeChime(){
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const t0 = ctx.currentTime + 0.01;
+    const playTone = (freq, start, dur, vol) => {
+      const osc = ctx.createOscillator();
+      const g = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, start);
+      g.gain.setValueAtTime(0, start);
+      g.gain.linearRampToValueAtTime(vol, start + 0.015);
+      g.gain.exponentialRampToValueAtTime(0.0008, start + dur);
+      osc.connect(g);
+      g.connect(ctx.destination);
+      osc.start(start);
+      osc.stop(start + dur + 0.02);
+    };
+    playTone(784, t0, 0.12, 0.09);
+    playTone(1175, t0 + 0.09, 0.18, 0.08);
+    setTimeout(() => ctx.close().catch(() => {}), 400);
+  } catch (_) { /* ignore */ }
+}
+
 async function onWakeHit(remainder){
+  playWakeChime();
   const d = deps();
   d.log?.('voice', 'WAKE', remainder
     ? `Hey Lisa + command: "${remainder.slice(0, 80)}"`
