@@ -291,6 +291,9 @@ let micStream=null, recorder=null, chunks=[], actx=null, analyser=null, vdata=nu
 let vad=null, spoke=false, loudAt=0, turnStart=0;
 let floorSum=0, floorN=0, threshold=0.02, peak=0, calibrating=true;
 const SILENCE=900, MIN_TURN_MS=350, MAX_TURN_MS=18000, NO_SPEECH_MS=10000;
+const WAKE_RE = /\b(hey\s*[,]?\s*lisa|heylisa|hey\s+lee\s*sa|a\s+lee\s*sa)\b/i;
+const POST_WAKE_SILENCE=1800, POST_WAKE_MIN_MS=500, POST_WAKE_NO_SPEECH_MS=22000, POST_WAKE_GRACE_MS=1400;
+let postWakeTurn = false;
 
 // ── voice out ──
 let muted = false, player = null;
@@ -339,6 +342,47 @@ function resolveAfterSpeak(resolve){
   resolve();
 }
 
+async function armPostWakeListening(){
+  postWakeTurn = true;
+  const lab = $('#stateLab');
+  const foot = $('#footHint');
+  if (lab) lab.textContent = 'À vous — quelle est votre demande ?';
+  if (foot) foot.textContent = 'Parlez maintenant (après « Hey Lisa »)';
+  $('#response').innerHTML = '<span class="rplaceholder">Écoute de votre demande…</span>';
+  setAppState('listening');
+  if (convo){
+    beginTurn();
+    return;
+  }
+  await wakePause();
+  if (RT.stt){
+    try {
+      micStream = await navigator.mediaDevices.getUserMedia(
+        {audio:{echoCancellation:true, noiseSuppression:true, autoGainControl:true}});
+    } catch(e){ log('error','VOICE','mic blocked'); postWakeTurn = false; return; }
+    actx = new (window.AudioContext||window.webkitAudioContext)();
+    await actx.resume();
+    analyser = actx.createAnalyser(); analyser.fftSize = 1024;
+    actx.createMediaStreamSource(micStream).connect(analyser);
+    vdata = new Uint8Array(analyser.fftSize);
+    convo = true; suppress = false;
+    $('#mic').classList.add('on');
+    $('#mic')?.setAttribute('aria-pressed','true');
+    log('voice','VOICE','post-wake · microphone ouvert');
+    beginTurn();
+    return;
+  }
+  if (SpeechRecognition){
+    convo = true; suppress = false;
+    $('#mic').classList.add('on');
+    $('#mic')?.setAttribute('aria-pressed','true');
+    startBrowserRecognition();
+    return;
+  }
+  postWakeTurn = false;
+  log('error','VOICE','cannot open mic after wake');
+}
+
 // ── start / stop the whole conversation ──
 async function micToggle(){
   if (convo){ stopConvo(); return; }
@@ -377,7 +421,7 @@ async function micToggle(){
 }
 
 function stopConvo(){
-  convo = false; suppress = false;
+  convo = false; suppress = false; postWakeTurn = false;
   if (recognition){ try{ recognition.onend = null; recognition.stop(); }catch(_){} recognition=null; }
   if (vad){ clearInterval(vad); vad=null; }
   if (recorder && recorder.state==='recording'){ recorder._cancel=true; try{recorder.stop();}catch(_){} }
@@ -480,16 +524,19 @@ function vtick(){
     return;
   }
 
+  const silenceMs = postWakeTurn ? POST_WAKE_SILENCE : SILENCE;
+  const noSpeechMs = postWakeTurn ? POST_WAKE_NO_SPEECH_MS : NO_SPEECH_MS;
+
   if (rms > threshold){
     loudAt = t;
     if (!spoke){ spoke = true; log('voice','VOICE','speech detected'); }
-  } else if (spoke && t - loudAt > SILENCE){
-    return endTurn('silence');
+  } else if (spoke){
+    const grace = postWakeTurn ? POST_WAKE_GRACE_MS : 0;
+    if (t - turnStart > grace && t - loudAt > silenceMs) return endTurn('silence');
   }
 
-  // failsafes so it can never hang: cap the length, re-listen if no speech at all
   if (t - turnStart > MAX_TURN_MS) return endTurn('max-length');
-  if (!spoke && t - turnStart > NO_SPEECH_MS) return endTurn('no-speech');
+  if (!spoke && t - turnStart > noSpeechMs) return endTurn('no-speech');
 }
 
 async function ship(){
@@ -497,10 +544,13 @@ async function ship(){
   const blob = new Blob(chunks, {type: recorder?.mimeType || 'audio/webm'}); chunks=[];
   if (cancel){ return; }
   // no speech heard, too short, or too small — just listen again, don't ship ambient noise
-  if (!spoke || blob.size < 1400 || performance.now()-turnStart < MIN_TURN_MS){
+  const minMs = postWakeTurn ? POST_WAKE_MIN_MS : MIN_TURN_MS;
+  if (!spoke || blob.size < 1400 || performance.now()-turnStart < minMs){
     if (convo && !suppress) beginTurn();
     return;
   }
+  const wasPostWake = postWakeTurn;
+  if (wasPostWake) postWakeTurn = false;
   setAppState('thinking');
   $('#stateLab').textContent = 'Lisa transcrit…';
   log('voice','VOICE',`uploading ${Math.round(blob.size/1024)}KB to server STT`);
@@ -512,15 +562,23 @@ async function ship(){
     const ms = Math.round(performance.now() - t0);
     if (!text){
       log('voice','VOICE','nothing transcribed');
+      if (wasPostWake) postWakeTurn = true;
       if (convo) beginTurn(); else setAppState('idle');
       return;
     }
-    log('voice','VOICE',`transcribed by ElevenLabs in ${ms}ms: "${text}"`);
+    let clean = text.replace(WAKE_RE, '').replace(/\s+/g, ' ').trim();
+    if (!clean || (WAKE_RE.test(text) && clean.length < 4)){
+      log('voice','VOICE','wake phrase only — still listening');
+      postWakeTurn = true;
+      if (convo) beginTurn();
+      return;
+    }
+    log('voice','VOICE',`transcribed by ElevenLabs in ${ms}ms: "${clean}"`);
     const armed = $('#input').dataset.cmd || '';
-    const full = (armed ? armed + ' ' : '') + text;
+    const full = (armed ? armed + ' ' : '') + clean;
     $('#input').value = ''; disarm();
     log('send','SEND',`auto-sent voice: ${full}`);
-    await transmit(full);                       // runs, then speaks; both with mic deaf
+    await transmit(full);
     // turn's done — hand the floor back and listen again
     suppress = false;
     if (convo) beginTurn();
@@ -674,7 +732,7 @@ setInterval(async () => {
       get running(){ return running; },
       get suppress(){ return suppress; },
       get stt(){ return RT.stt; },
-      transmit, log, micToggle, apiHeaders,
+      transmit, log, micToggle, armPostWakeListening, apiHeaders,
       wakeCfg: s,
     };
     const wake = await import('./wake.js');

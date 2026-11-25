@@ -147,19 +147,19 @@ function playWakeChime(){
   } catch (_) { /* ignore */ }
 }
 
-async function onWakeHit(remainder){
+let wakeLatch = false;
+
+async function onWakeHit(){
+  if (wakeLatch) return;
+  wakeLatch = true;
+  setTimeout(() => { wakeLatch = false; }, 2500);
   playWakeChime();
   const d = deps();
-  d.log?.('voice', 'WAKE', remainder
-    ? `Hey Lisa + command: "${remainder.slice(0, 80)}"`
-    : 'Hey Lisa detected');
+  d.log?.('voice', 'WAKE', 'Hey Lisa — en attente de votre demande');
   stopWake();
-  if (remainder){
-    await d.transmit?.(remainder);
-    if (wakeWanted) setTimeout(() => resumeWake(), 800);
-    return;
-  }
-  if (d.micToggle) await d.micToggle();
+  await new Promise(r => setTimeout(r, 320));
+  if (d.armPostWakeListening) await d.armPostWakeListening();
+  else if (d.micToggle) await d.micToggle();
 }
 
 function startSpeechWake(){
@@ -179,7 +179,7 @@ function startSpeechWake(){
     }
     const text = chunk.trim();
     if (!text) return;
-    if (WAKE_RE.test(text)) onWakeHit(stripWake(text));
+    if (WAKE_RE.test(text)) onWakeHit();
   };
   wakeRec.onerror = (ev) => {
     const d = deps();
@@ -283,7 +283,7 @@ async function wakeShip(){
     const text = (r.text || '').trim();
     deps().log?.('voice', 'WAKE', text ? `entendu: "${text.slice(0, 80)}"` : 'silence');
     if (text && WAKE_RE.test(text)){
-      await onWakeHit(stripWake(text));
+      await onWakeHit();
       return;
     }
   } catch (e) {

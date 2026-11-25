@@ -11,7 +11,7 @@
 4. Sur desktop Chrome, l’écoute peut démarrer seule si `WAKE_WORD=1`.
 3. Dites **« Hey Lisa »** puis votre instruction, ou seulement **« Hey Lisa »** pour ouvrir le mode conversation (micro).
 
-Exemple : *« Hey Lisa, what's the weather? »* envoie directement la question.
+Deux temps : dites **« Hey Lisa »** (signal sonore), puis **votre demande** dans le silence qui suit — pas besoin d’une seule phrase.
 
 ## Désactiver
 
