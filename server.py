@@ -123,6 +123,10 @@ class Handler(BaseHTTPRequestHandler):
                 voice_id=voice.voice_id() if voice.available() else "browser",
                 tts_model=voice.model_id() if voice.available() else None,
                 tts_format=voice.output_format() if voice.available() else None,
+                wake_word=os.environ.get("WAKE_WORD", "1").strip().lower() not in {"0", "false", "no"},
+                porcupine_key=os.environ.get("PORCUPINE_ACCESS_KEY", "").strip() or None,
+                porcupine_keyword=(os.environ.get("PORCUPINE_KEYWORD_PATH", "wake/hey-lisa.ppn").strip()
+                                    if os.environ.get("PORCUPINE_ACCESS_KEY", "").strip() else None),
                 stt="elevenlabs" if voice.available() else "browser",
                 tts="elevenlabs" if voice.available() else "browser",
                 session=SESSION["id"]))

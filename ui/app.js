@@ -125,6 +125,13 @@ function usageBlock(u){
 let running = false, answer = '', firstDelta = false, speakThisRun = true;
 let speakDone = Promise.resolve(), activeController = null;
 
+async function wakePause(){
+  try { (await import('./wake.js')).pauseWake(); } catch (_) { /* wake module optional */ }
+}
+async function wakeResume(){
+  try { (await import('./wake.js')).resumeWake(); } catch (_) { /* wake module optional */ }
+}
+
 async function transmit(message, options = {}){
   if (!message.trim()) return;
   if (running){
@@ -133,6 +140,7 @@ async function transmit(message, options = {}){
     return;
   }
   running = true; answer = ''; firstDelta = false; speakThisRun = options.speak !== false;
+  await wakePause();
 
   const fresh = /^\/new\b/.test(message.trim());
   const id = rid();
@@ -181,6 +189,7 @@ async function transmit(message, options = {}){
   stopThinkTimer();
   await speakDone;
   if (!convo && !suppress) setAppState('idle');
+  if (!convo) await wakeResume();
 }
 
 function handle(ev){
@@ -323,13 +332,17 @@ function speak(text){
 function resolveAfterSpeak(resolve){
   suppress = false;
   if (convo) setAppState('listening');
-  else setAppState('idle');
+  else {
+    setAppState('idle');
+    wakeResume();
+  }
   resolve();
 }
 
 // ── start / stop the whole conversation ──
 async function micToggle(){
   if (convo){ stopConvo(); return; }
+  await wakePause();
   // Prefer ElevenLabs server-side STT when configured. Browser STT is unreliable
   // across Chrome profiles and often fails silently; ElevenLabs receives the
   // actual microphone recording from MediaRecorder and is much more consistent.
@@ -376,6 +389,7 @@ function stopConvo(){
   $('#mic')?.setAttribute('aria-pressed','false');
   log('voice','VOICE','conversation closed');
   setAppState('idle');
+  wakeResume();
 }
 
 // ── browser speech turn ──
@@ -655,6 +669,15 @@ setInterval(async () => {
     log('status', 'BOOT',
         `gateway online · ${s.runtime} core · profile=${s.profile || 'default'} · permission=${s.permission}`);
     log('voice', 'VOICE', `channel ready — ${RT.stt ? 'ElevenLabs STT' : (RT.browserStt ? 'browser STT' : s.stt)} / ${RT.tts ? 'ElevenLabs TTS' : 'browser TTS'}`);
+    window.__lisaWake = {
+      get convo(){ return convo; },
+      get running(){ return running; },
+      get suppress(){ return suppress; },
+      transmit, log, micToggle,
+    };
+    const wake = await import('./wake.js');
+    wake.initWake(s);
+    if (s.wake_word) log('voice', 'WAKE', 'Hey Lisa wake word ready (Chrome / Edge speech)');
     setAppState('idle');
     levelLoop();
   } catch(e){
