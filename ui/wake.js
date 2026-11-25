@@ -1,21 +1,50 @@
 /**
- * Wake word "Hey Lisa" — browser SpeechRecognition (default) or Porcupine (.ppn).
- * Loaded as module; hooks via window.__lisaWake after app.js defines RT / transmit / convo.
+ * Wake word "Hey Lisa" — ElevenLabs VAD (preferred) or browser SpeechRecognition.
  */
-const WAKE_RE = /\bhey[\s,]*lisa\b/i;
+const WAKE_RE = /\b(hey\s*[,]?\s*lisa|heylisa|hey\s+lee\s*sa|a\s+lee\s*sa)\b/i;
 
 let wakeWanted = false;
 let wakeRec = null;
 let wakeActive = false;
 let porcupineStop = null;
 
+let wakeStream = null, wakeRecorder = null, wakeChunks = [];
+let wakeCtx = null, wakeAnalyser = null, wakeVdata = null, wakeVad = null;
+let wakeSpoke = false, wakeLoudAt = 0, wakeTurnStart = 0;
+let wakeFloorSum = 0, wakeFloorN = 0, wakeThreshold = 0.02, wakeCalibrating = true;
+const WAKE_SILENCE = 850, WAKE_MIN_MS = 400, WAKE_MAX_MS = 12000;
+
 function deps(){
   return window.__lisaWake || {};
+}
+
+function isMobile(){
+  return matchMedia('(pointer:coarse)').matches
+    || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent || '');
+}
+
+async function isBrave(){
+  try {
+    return navigator.brave && await navigator.brave.isBrave();
+  } catch (_) {
+    return false;
+  }
+}
+
+function speechApiOK(){
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  return !!SR;
 }
 
 function canWake(){
   const { convo, running, suppress } = deps();
   return wakeWanted && !convo && !running && !suppress;
+}
+
+function pickMime(){
+  for (const m of ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg'])
+    if (window.MediaRecorder?.isTypeSupported?.(m)) return { mimeType: m };
+  return undefined;
 }
 
 function setWakeUi(on){
@@ -40,6 +69,25 @@ function stripWake(text){
   return String(text || '').replace(WAKE_RE, '').replace(/\s+/g, ' ').trim();
 }
 
+function cleanupWakeMedia(){
+  if (wakeVad){ clearInterval(wakeVad); wakeVad = null; }
+  if (wakeRecorder && wakeRecorder.state === 'recording'){
+    wakeRecorder._cancel = true;
+    try { wakeRecorder.stop(); } catch (_) { /* ignore */ }
+  }
+  wakeRecorder = null;
+  wakeChunks = [];
+  if (wakeStream){
+    wakeStream.getTracks().forEach(t => t.stop());
+    wakeStream = null;
+  }
+  if (wakeCtx){
+    wakeCtx.close().catch(() => {});
+    wakeCtx = null;
+  }
+  wakeAnalyser = null;
+}
+
 export function wakeEnabled(){
   return wakeWanted;
 }
@@ -54,6 +102,7 @@ export function stopWake(){
     porcupineStop().catch(() => {});
     porcupineStop = null;
   }
+  cleanupWakeMedia();
   setWakeUi(false);
 }
 
@@ -63,14 +112,14 @@ export function pauseWake(){
 
 export async function resumeWake(){
   if (!wakeWanted) return;
-  await startWake();
+  await startWake(deps().wakeCfg);
 }
 
 export function setWakeWanted(on){
   wakeWanted = !!on;
   const btn = document.getElementById('btnWake');
   if (btn) btn.setAttribute('aria-pressed', wakeWanted ? 'true' : 'false');
-  if (wakeWanted) startWake();
+  if (wakeWanted) startWake(deps().wakeCfg);
   else stopWake();
 }
 
@@ -82,14 +131,10 @@ async function onWakeHit(remainder){
   stopWake();
   if (remainder){
     await d.transmit?.(remainder);
-    if (wakeWanted) setTimeout(() => resumeWake(), 600);
+    if (wakeWanted) setTimeout(() => resumeWake(), 800);
     return;
   }
-  if (d.startConvo){
-    await d.startConvo();
-  } else if (d.micToggle){
-    await d.micToggle();
-  }
+  if (d.micToggle) await d.micToggle();
 }
 
 function startSpeechWake(){
@@ -107,38 +152,157 @@ function startSpeechWake(){
     for (let i = e.resultIndex; i < e.results.length; i++){
       chunk += e.results[i][0].transcript;
     }
-  const text = chunk.trim();
-  if (!text) return;
-  if (WAKE_RE.test(text)){
-      const rest = stripWake(text);
-      onWakeHit(rest);
-    }
+    const text = chunk.trim();
+    if (!text) return;
+    if (WAKE_RE.test(text)) onWakeHit(stripWake(text));
   };
   wakeRec.onerror = (ev) => {
+    const d = deps();
+    const msg = ev.error || 'error';
     if (ev.error === 'not-allowed'){
       wakeWanted = false;
-      const btn = document.getElementById('btnWake');
-      if (btn) btn.setAttribute('aria-pressed', 'false');
-      deps().log?.('error', 'WAKE', 'microphone denied for wake word');
+      document.getElementById('btnWake')?.setAttribute('aria-pressed', 'false');
+      d.log?.('error', 'WAKE', 'Micro refusé. Autorisez le micro pour ce site (icône cadenas).');
+    } else if (ev.error === 'service-not-allowed' || ev.error === 'network'){
+      d.log?.('error', 'WAKE', 'Speech API indisponible (Brave ?). Utilisez ElevenLabs STT ou Chrome.');
+      wakeWanted = false;
+    } else {
+      d.log?.('note', 'WAKE', `speech wake: ${msg}`);
     }
     wakeActive = false;
     setWakeUi(false);
   };
   wakeRec.onend = () => {
     wakeActive = false;
-    if (canWake()) setTimeout(startSpeechWake, 350);
+    if (canWake()) setTimeout(startSpeechWake, 500);
     else setWakeUi(false);
   };
   try {
     wakeRec.start();
-  } catch (_) {
+    deps().log?.('voice', 'WAKE', 'écoute navigateur (Hey Lisa)');
+  } catch (err) {
+    deps().log?.('error', 'WAKE', 'impossible de démarrer la reconnaissance vocale');
     wakeActive = false;
     setWakeUi(false);
   }
 }
 
-async function startPorcupineWake(_cfg){
-  // Custom .ppn from Picovoice Console — wire Web Voice Processor when a model is shipped in ui/wake/.
+function beginWakeTurn(){
+  if (!wakeStream || !canWake()) return;
+  wakeChunks = [];
+  wakeSpoke = false;
+  wakeFloorSum = 0;
+  wakeFloorN = 0;
+  wakeCalibrating = true;
+  wakeThreshold = 0.02;
+  wakeRecorder = new MediaRecorder(wakeStream, pickMime());
+  wakeRecorder.ondataavailable = (e) => { if (e.data?.size) wakeChunks.push(e.data); };
+  wakeRecorder.onstop = () => wakeShip();
+  wakeRecorder.start(250);
+  wakeTurnStart = wakeLoudAt = performance.now();
+  if (!wakeVad) wakeVad = setInterval(wakeVtick, 45);
+}
+
+function wakeVtick(){
+  if (!wakeAnalyser || !wakeRecorder || wakeRecorder.state !== 'recording') return;
+  wakeAnalyser.getByteTimeDomainData(wakeVdata);
+  let s = 0;
+  for (let i = 0; i < wakeVdata.length; i++){
+    const v = (wakeVdata[i] - 128) / 128;
+    s += v * v;
+  }
+  const rms = Math.sqrt(s / wakeVdata.length);
+  const t = performance.now();
+  const app = document.getElementById('app');
+  if (app && app.dataset.wake === 'on'){
+    app.style.setProperty('--level', Math.min(1, rms * 3.5).toFixed(3));
+  }
+
+  if (wakeCalibrating){
+    wakeFloorSum += rms;
+    wakeFloorN++;
+    if (t - wakeTurnStart > 280){
+      const floor = wakeFloorSum / Math.max(1, wakeFloorN);
+      wakeThreshold = Math.max(0.006, floor * 1.65 + 0.003);
+      wakeCalibrating = false;
+    }
+    return;
+  }
+
+  if (rms > wakeThreshold){
+    wakeLoudAt = t;
+    if (!wakeSpoke) wakeSpoke = true;
+  } else if (wakeSpoke && t - wakeLoudAt > WAKE_SILENCE){
+    try { wakeRecorder.stop(); } catch (_) { /* ignore */ }
+    return;
+  }
+  if (t - wakeTurnStart > WAKE_MAX_MS) try { wakeRecorder.stop(); } catch (_) { /* ignore */ }
+}
+
+async function wakeShip(){
+  const cancel = wakeRecorder?._cancel;
+  const blob = new Blob(wakeChunks, { type: wakeRecorder?.mimeType || 'audio/webm' });
+  wakeChunks = [];
+  if (cancel || !canWake()){
+    if (canWake()) beginWakeTurn();
+    return;
+  }
+  if (!wakeSpoke || blob.size < 1200 || performance.now() - wakeTurnStart < WAKE_MIN_MS){
+    beginWakeTurn();
+    return;
+  }
+  const d = deps();
+  const hdrs = d.apiHeaders?.({ 'content-type': blob.type || 'audio/webm' }) || {};
+  try {
+    const r = await fetch('/api/listen', { method: 'POST', headers: hdrs, body: blob }).then(x => x.json());
+    const text = (r.text || '').trim();
+    deps().log?.('voice', 'WAKE', text ? `entendu: "${text.slice(0, 80)}"` : 'silence');
+    if (text && WAKE_RE.test(text)){
+      await onWakeHit(stripWake(text));
+      return;
+    }
+  } catch (e) {
+    d.log?.('error', 'WAKE', `STT wake: ${String(e).slice(0, 80)}`);
+  }
+  if (canWake()) beginWakeTurn();
+}
+
+async function startElevenLabsWake(){
+  const d = deps();
+  if (!d.stt || !canWake() || wakeActive) return false;
+  try {
+    wakeStream = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+    });
+  } catch (e) {
+    const name = e?.name || 'Error';
+    let hint = String(e?.message || name).slice(0, 120);
+    if (name === 'NotAllowedError'){
+      hint = 'Micro refusé — autorisez-le pour ce site. Sur mobile : HTTPS ou localhost requis.';
+    } else if (name === 'NotFoundError'){
+      hint = 'Aucun micro détecté.';
+    } else if (!window.isSecureContext){
+      hint = 'Contexte non sécurisé : ouvrez via https:// ou http://127.0.0.1 (pas une IP LAN en http).';
+    }
+    d.log?.('error', 'WAKE', hint);
+    wakeWanted = false;
+    document.getElementById('btnWake')?.setAttribute('aria-pressed', 'false');
+    return false;
+  }
+  wakeCtx = new (window.AudioContext || window.webkitAudioContext)();
+  await wakeCtx.resume();
+  wakeAnalyser = wakeCtx.createAnalyser();
+  wakeAnalyser.fftSize = 1024;
+  wakeVdata = new Uint8Array(wakeAnalyser.fftSize);
+  wakeCtx.createMediaStreamSource(wakeStream).connect(wakeAnalyser);
+  wakeActive = true;
+  setWakeUi(true);
+  d.log?.('voice', 'WAKE', 'écoute ElevenLabs (dites « Hey Lisa »)');
+  beginWakeTurn();
+  return true;
+}
+
+async function startPorcupineWake(){
   return false;
 }
 
@@ -146,25 +310,56 @@ export async function startWake(cfg){
   stopWake();
   if (!wakeWanted || !canWake()) return;
   if (await startPorcupineWake(cfg)) return;
-  startSpeechWake();
-}
-
-export function initWake(cfg){
-  const enabled = cfg?.wake_word !== false;
-  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  const hasPorcupine = !!(cfg?.porcupine_key && cfg?.porcupine_keyword);
-  const btn = document.getElementById('btnWake');
-  if (!btn) return;
-  if (!enabled || (!SR && !hasPorcupine)){
-    btn.disabled = true;
-    btn.title = 'Wake word needs Chrome speech or Porcupine (.ppn)';
+  if (cfg?.stt === 'elevenlabs' || deps().stt){
+    if (await startElevenLabsWake()) return;
+  }
+  if (speechApiOK() && !(await isBrave())){
+    startSpeechWake();
     return;
   }
+  deps().log?.('error', 'WAKE',
+    'Wake indisponible : ajoutez ELEVENLABS_API_KEY, ou utilisez Chrome (pas Brave) pour la reco navigateur.');
+  wakeWanted = false;
+  document.getElementById('btnWake')?.setAttribute('aria-pressed', 'false');
+}
+
+export async function initWake(cfg){
+  const enabled = cfg?.wake_word !== false;
+  const btn = document.getElementById('btnWake');
+  if (!btn || !enabled) return;
+
+  const hasStt = cfg?.stt === 'elevenlabs';
+  const brave = await isBrave();
+  const canSpeech = speechApiOK() && !brave;
+
+  if (!hasStt && !canSpeech){
+    btn.disabled = true;
+    btn.title = 'Hey Lisa : ElevenLabs STT ou Chrome/Edge (Brave non supporté)';
+    deps().log?.('note', 'WAKE',
+      'Wake désactivé — Brave sans ElevenLabs, ou micro/Speech API indisponible.');
+    return;
+  }
+
   btn.disabled = false;
+  if (brave && hasStt){
+    btn.title = 'Hey Lisa via ElevenLabs (recommandé sur Brave)';
+  } else if (isMobile()){
+    btn.title = 'Touchez pour activer — le mobile exige un geste pour le micro';
+  }
+
   btn.addEventListener('click', () => setWakeWanted(!wakeWanted));
-  if (cfg?.wake_autostart !== false){
+
+  const autostart = cfg?.wake_autostart !== false && !isMobile() && !brave;
+  if (autostart){
     wakeWanted = true;
     btn.setAttribute('aria-pressed', 'true');
     startWake(cfg);
+  } else {
+    deps().log?.('note', 'WAKE',
+      isMobile()
+        ? 'Touchez « Hey Lisa » pour activer (micro + geste requis sur mobile).'
+        : (brave
+          ? 'Brave : touchez « Hey Lisa » (ElevenLabs STT) ou utilisez Chrome.'
+          : 'Touchez « Hey Lisa » pour activer l\'écoute.'));
   }
 }

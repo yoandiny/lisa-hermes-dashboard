@@ -673,11 +673,12 @@ setInterval(async () => {
       get convo(){ return convo; },
       get running(){ return running; },
       get suppress(){ return suppress; },
-      transmit, log, micToggle,
+      get stt(){ return RT.stt; },
+      transmit, log, micToggle, apiHeaders,
+      wakeCfg: s,
     };
     const wake = await import('./wake.js');
-    wake.initWake(s);
-    if (s.wake_word) log('voice', 'WAKE', 'Hey Lisa wake word ready (Chrome / Edge speech)');
+    await wake.initWake(s);
     setAppState('idle');
     levelLoop();
   } catch(e){
