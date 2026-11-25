@@ -112,7 +112,15 @@ export function pauseWake(){
 
 export async function resumeWake(){
   if (!wakeWanted) return;
-  await startWake(deps().wakeCfg);
+  const tryStart = (n = 0) => {
+    const d = deps();
+    if (d.running || d.convo || d.suppress){
+      if (n < 40) return setTimeout(() => tryStart(n + 1), 250);
+      return;
+    }
+    startWake(d.wakeCfg);
+  };
+  tryStart();
 }
 
 export function setWakeWanted(on){

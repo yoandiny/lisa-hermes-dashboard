@@ -13,6 +13,8 @@
 
 Deux temps : dites **« Hey Lisa »** (signal sonore), puis **votre demande** dans le silence qui suit — pas besoin d’une seule phrase.
 
+Après avoir **coupé le micro** ou dit une phrase de fin (« merci », « c’est tout », « à plus », etc.), la conversation se ferme et **« Hey Lisa »** se réactive pour le prochain tour (si le bouton reste activé).
+
 ## Désactiver
 
 Dans `.env` : `WAKE_WORD=0`, puis redémarrer le serveur.

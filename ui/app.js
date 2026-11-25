@@ -3,7 +3,7 @@
    The brain is your own `hermes` CLI/profile, so configured Hermes tools,
    browser automation, skills, memory, MCP servers and third-party connectors are live. */
 const $ = s => document.querySelector(s);
-const RT = {tts:false, stt:false, browserStt:false, browserTts:false};
+const RT = {tts:false, stt:false, browserStt:false, browserTts:false, wakeWord:true};
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 const speechSynth = window.speechSynthesis;
 const API_TOKEN = document.querySelector('meta[name="jarvis-token"]')?.content || '';
@@ -187,9 +187,11 @@ async function transmit(message, options = {}){
   activeController = null;
   running = false;
   stopThinkTimer();
+  const farewell = isFarewell(message);
   await speakDone;
   if (!convo && !suppress) setAppState('idle');
-  if (!convo) await wakeResume();
+  if (farewell && convo) stopConvo();
+  else if (!convo) await rearmWake();
 }
 
 function handle(ev){
@@ -292,6 +294,22 @@ let vad=null, spoke=false, loudAt=0, turnStart=0;
 let floorSum=0, floorN=0, threshold=0.02, peak=0, calibrating=true;
 const SILENCE=900, MIN_TURN_MS=350, MAX_TURN_MS=18000, NO_SPEECH_MS=10000;
 const WAKE_RE = /\b(hey\s*[,]?\s*lisa|heylisa|hey\s+lee\s*sa|a\s+lee\s*sa)\b/i;
+const FAREWELL_RE = /\b(that'?s all|that is all|for now|for the moment|see you|bye|goodbye|good night|thanks(?: a lot| so much)?|thank you|nothing else|i'?m done|merci(?: beaucoup)?|à plus(?: tard)?|a plus tard|c'?est tout(?: pour le moment)?|au revoir|à bientôt|a bientot|on s'?arrête|bonne (?:journée|soirée))\b/i;
+
+function isFarewell(text){
+  const t = String(text || '').trim().toLowerCase();
+  if (!t || t.length > 220) return false;
+  return FAREWELL_RE.test(t);
+}
+
+async function rearmWake(){
+  if (!RT.wakeWord) return;
+  try {
+    const wake = await import('./wake.js');
+    if (!wake.wakeEnabled()) return;
+    await wake.resumeWake();
+  } catch (_) { /* ignore */ }
+}
 const POST_WAKE_SILENCE=1800, POST_WAKE_MIN_MS=500, POST_WAKE_NO_SPEECH_MS=22000, POST_WAKE_GRACE_MS=1400;
 let postWakeTurn = false;
 
@@ -337,7 +355,7 @@ function resolveAfterSpeak(resolve){
   if (convo) setAppState('listening');
   else {
     setAppState('idle');
-    wakeResume();
+    rearmWake();
   }
   resolve();
 }
@@ -359,7 +377,7 @@ async function armPostWakeListening(){
     try {
       micStream = await navigator.mediaDevices.getUserMedia(
         {audio:{echoCancellation:true, noiseSuppression:true, autoGainControl:true}});
-    } catch(e){ log('error','VOICE','mic blocked'); postWakeTurn = false; return; }
+    } catch(e){ log('error','VOICE','mic blocked'); postWakeTurn = false; void rearmWake(); return; }
     actx = new (window.AudioContext||window.webkitAudioContext)();
     await actx.resume();
     analyser = actx.createAnalyser(); analyser.fftSize = 1024;
@@ -381,6 +399,7 @@ async function armPostWakeListening(){
   }
   postWakeTurn = false;
   log('error','VOICE','cannot open mic after wake');
+  void rearmWake();
 }
 
 // ── start / stop the whole conversation ──
@@ -394,7 +413,7 @@ async function micToggle(){
     try {
       micStream = await navigator.mediaDevices.getUserMedia(
         {audio:{echoCancellation:true, noiseSuppression:true, autoGainControl:true}});
-    } catch(e){ log('error','VOICE','mic blocked — allow it in the address bar'); return; }
+    } catch(e){ log('error','VOICE','mic blocked — allow it in the address bar'); void rearmWake(); return; }
     actx = new (window.AudioContext||window.webkitAudioContext)();
     await actx.resume();
     analyser = actx.createAnalyser(); analyser.fftSize = 1024;
@@ -431,9 +450,11 @@ function stopConvo(){
   if (actx){ actx.close().catch(()=>{}); actx=null; analyser=null; }
   $('#mic').classList.remove('on');
   $('#mic')?.setAttribute('aria-pressed','false');
-  log('voice','VOICE','conversation closed');
+  log('voice','VOICE','conversation closed — en attente de « Hey Lisa »');
   setAppState('idle');
-  wakeResume();
+  const foot = $('#footHint');
+  if (foot) foot.textContent = 'Dites « Hey Lisa » pour reprendre (micro coupé)';
+  setTimeout(() => rearmWake(), 400);
 }
 
 // ── browser speech turn ──
@@ -469,7 +490,9 @@ function startBrowserRecognition(){
     log('send','SEND',`auto-sent voice: ${full}`);
     await transmit(full);
     suppress = false;
-    if (convo) setTimeout(startBrowserRecognition, 350);
+    if (!convo) return;
+    if (isFarewell(text)) stopConvo();
+    else setTimeout(startBrowserRecognition, 350);
   };
   setAppState('listening');
   try{ recognition.start(); }catch(e){ log('error','VOICE','speech recognition failed to start'); }
@@ -579,9 +602,10 @@ async function ship(){
     $('#input').value = ''; disarm();
     log('send','SEND',`auto-sent voice: ${full}`);
     await transmit(full);
-    // turn's done — hand the floor back and listen again
     suppress = false;
-    if (convo) beginTurn();
+    if (!convo) return;
+    if (isFarewell(clean)) stopConvo();
+    else beginTurn();
   } catch(e){
     log('error','VOICE','transcription failed');
     suppress = false;
@@ -705,6 +729,7 @@ setInterval(async () => {
   try {
     const s = await fetch('/api/status').then(r=>r.json());
     RT.tts = s.tts==='elevenlabs'; RT.stt = s.stt==='elevenlabs';
+    RT.wakeWord = s.wake_word !== false;
     RT.browserStt = !!SpeechRecognition; RT.browserTts = !!speechSynth;
 
     const port = location.port || '8730';
